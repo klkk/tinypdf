@@ -145,7 +145,7 @@
     <script>
         // Global variables
         let files = [];
-        let compressedFiles = [];
+        let isCompressing = false;
 
         // DOM elements
         const dropZone = document.getElementById('dropZone');
@@ -174,6 +174,8 @@
         function handleFileSelect(e) {
             const selectedFiles = Array.from(e.target.files);
             addFiles(selectedFiles);
+            // Clear the input value to allow selecting the same file again
+            e.target.value = '';
         }
 
         function handleDragOver(e) {
@@ -194,9 +196,17 @@
         }
 
         function addFiles(newFiles) {
+            let addedCount = 0;
             newFiles.forEach(file => {
                 if (file.size > 50 * 1024 * 1024) {
-                    showToast('文件大小超过 50MB 限制', 'error');
+                    showToast(`文件 ${file.name} 超过 50MB 限制`, 'error');
+                    return;
+                }
+                
+                // Check if file already exists
+                const exists = files.some(f => f.name === file.name && f.size === file.size);
+                if (exists) {
+                    showToast(`文件 ${file.name} 已存在`, 'warning');
                     return;
                 }
                 
@@ -212,8 +222,12 @@
                 
                 files.push(fileObj);
                 renderFileItem(fileObj);
+                addedCount++;
             });
             
+            if (addedCount > 0) {
+                showToast(`成功添加 ${addedCount} 个文件`, 'success');
+            }
             updateUI();
         }
 
@@ -257,23 +271,43 @@
         }
 
         async function compressAllFiles() {
+            if (isCompressing) {
+                showToast('正在压缩中，请稍候...', 'warning');
+                return;
+            }
+            
             if (files.length === 0) {
                 showToast('请先上传 PDF 文件', 'warning');
                 return;
             }
             
+            // Check if there are pending files
+            const pendingFiles = files.filter(f => f.status === 'pending');
+            if (pendingFiles.length === 0) {
+                showToast('所有文件已压缩完成', 'info');
+                return;
+            }
+            
+            isCompressing = true;
             compressAllBtn.disabled = true;
             compressAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>压缩中...';
             
-            for (const fileObj of files) {
-                if (fileObj.status === 'pending') {
-                    await compressFile(fileObj);
+            try {
+                for (const fileObj of files) {
+                    if (fileObj.status === 'pending') {
+                        await compressFile(fileObj);
+                    }
                 }
+                showToast('所有文件压缩完成！', 'success');
+            } catch (error) {
+                console.error('Compression error:', error);
+                showToast('压缩过程中出现错误', 'error');
+            } finally {
+                isCompressing = false;
+                compressAllBtn.disabled = false;
+                compressAllBtn.innerHTML = '<i class="fas fa-compress mr-2"></i>压缩全部文件';
+                updateStatistics();
             }
-            
-            compressAllBtn.disabled = false;
-            compressAllBtn.innerHTML = '<i class="fas fa-compress mr-2"></i>压缩全部文件';
-            updateStatistics();
         }
 
         async function compressFile(fileObj) {
@@ -329,19 +363,20 @@
                 
                 // Add download button
                 const fileItem = document.getElementById(`file-${fileObj.id}`);
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'ml-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors text-sm';
-                downloadBtn.innerHTML = '<i class="fas fa-download mr-2"></i>下载';
-                downloadBtn.onclick = () => downloadFile(fileObj);
-                fileItem.querySelector('.flex.items-center.justify-between').appendChild(downloadBtn);
-                
-                showToast(`${fileObj.name} 压缩完成，节省 ${savedPercent}%`, 'success');
+                const existingDownloadBtn = fileItem.querySelector('.download-btn');
+                if (!existingDownloadBtn) {
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'download-btn ml-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors text-sm';
+                    downloadBtn.innerHTML = '<i class="fas fa-download mr-2"></i>下载';
+                    downloadBtn.onclick = () => downloadFile(fileObj);
+                    fileItem.querySelector('.flex.items-center.justify-between').appendChild(downloadBtn);
+                }
                 
             } catch (error) {
                 console.error('Compression error:', error);
                 fileObj.status = 'error';
                 updateFileStatus(fileObj.id, 'error', 0);
-                showToast(`压缩 ${fileObj.name} 时出错`, 'error');
+                throw error;
             }
         }
 
@@ -357,9 +392,11 @@
                 switch (status) {
                     case 'pending':
                         statusText.textContent = '等待压缩';
+                        statusText.className = 'text-sm text-gray-600 mt-1';
                         break;
                     case 'compressing':
                         statusText.textContent = `压缩中... ${Math.round(progress)}%`;
+                        statusText.className = 'text-sm text-blue-600 mt-1';
                         break;
                     case 'completed':
                         statusText.textContent = '压缩完成';
@@ -407,7 +444,8 @@
         }
 
         function updateUI() {
-            compressAllBtn.disabled = files.length === 0;
+            const hasPendingFiles = files.some(f => f.status === 'pending');
+            compressAllBtn.disabled = files.length === 0 || !hasPendingFiles || isCompressing;
             updateStatistics();
         }
 
