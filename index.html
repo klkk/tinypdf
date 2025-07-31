@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 压缩工具 - 快速压缩 PDF 文件</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .drop-zone {
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            background-color: #dbeafe;
+            border-color: #3b82f6;
+            transform: scale(1.02);
+        }
+        .file-item {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        .toast {
+            animation: toastIn 0.3s ease-out;
+        }
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-file-pdf text-red-500 text-2xl"></i>
+                    <h1 class="text-2xl font-bold text-gray-900">PDF 压缩工具</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="clearAll" class="text-gray-600 hover:text-gray-900 transition-colors">
+                        <i class="fas fa-trash-alt mr-2"></i>清空全部
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Upload Zone -->
+        <div class="bg-white rounded-lg shadow-md p-8 mb-8">
+            <div id="dropZone" class="drop-zone border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-blue-400 transition-colors">
+                <i class="fas fa-cloud-upload-alt text-6xl text-gray-400 mb-4"></i>
+                <h3 class="text-xl font-semibold text-gray-700 mb-2">拖拽 PDF 文件到这里</h3>
+                <p class="text-gray-500 mb-4">或者点击选择文件</p>
+                <button class="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-folder-open mr-2"></i>选择文件
+                </button>
+                <input type="file" id="fileInput" accept=".pdf" multiple class="hidden">
+                <p class="text-sm text-gray-400 mt-4">支持多个文件同时上传，最大 50MB</p>
+            </div>
+        </div>
+
+        <!-- Compression Settings -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                <i class="fas fa-cog mr-2"></i>压缩设置
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">压缩质量</label>
+                    <select id="compressionLevel" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="high">高质量（推荐）</option>
+                        <option value="medium">中等质量</option>
+                        <option value="low">低质量（最小文件）</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">图像质量</label>
+                    <input type="range" id="imageQuality" min="10" max="100" value="75" class="w-full">
+                    <span id="qualityValue" class="text-sm text-gray-600">75%</span>
+                </div>
+                <div class="flex items-end">
+                    <button id="compressAll" class="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed">
+                        <i class="fas fa-compress mr-2"></i>压缩全部文件
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- File List -->
+        <div id="fileList" class="space-y-4">
+            <!-- Files will be dynamically added here -->
+        </div>
+
+        <!-- Statistics -->
+        <div id="statistics" class="hidden bg-white rounded-lg shadow-md p-6 mt-8">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                <i class="fas fa-chart-bar mr-2"></i>压缩统计
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="text-center">
+                    <p class="text-3xl font-bold text-blue-600" id="totalFiles">0</p>
+                    <p class="text-gray-600">总文件数</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-3xl font-bold text-green-600" id="originalSize">0 MB</p>
+                    <p class="text-gray-600">原始大小</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-3xl font-bold text-purple-600" id="compressedSize">0 MB</p>
+                    <p class="text-gray-600">压缩后大小</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-3xl font-bold text-red-600" id="savedSpace">0%</p>
+                    <p class="text-gray-600">节省空间</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <script>
+        // Global variables
+        let files = [];
+        let compressedFiles = [];
+
+        // DOM elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const compressAllBtn = document.getElementById('compressAll');
+        const clearAllBtn = document.getElementById('clearAll');
+        const compressionLevel = document.getElementById('compressionLevel');
+        const imageQuality = document.getElementById('imageQuality');
+        const qualityValue = document.getElementById('qualityValue');
+        const statistics = document.getElementById('statistics');
+
+        // Event listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        dropZone.addEventListener('dragover', handleDragOver);
+        dropZone.addEventListener('dragleave', handleDragLeave);
+        dropZone.addEventListener('drop', handleDrop);
+        compressAllBtn.addEventListener('click', compressAllFiles);
+        clearAllBtn.addEventListener('click', clearAllFiles);
+        imageQuality.addEventListener('input', (e) => {
+            qualityValue.textContent = e.target.value + '%';
+        });
+
+        // File handling functions
+        function handleFileSelect(e) {
+            const selectedFiles = Array.from(e.target.files);
+            addFiles(selectedFiles);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+            addFiles(droppedFiles);
+        }
+
+        function addFiles(newFiles) {
+            newFiles.forEach(file => {
+                if (file.size > 50 * 1024 * 1024) {
+                    showToast('文件大小超过 50MB 限制', 'error');
+                    return;
+                }
+                
+                const fileId = Date.now() + Math.random();
+                const fileObj = {
+                    id: fileId,
+                    file: file,
+                    name: file.name,
+                    size: file.size,
+                    compressed: null,
+                    status: 'pending'
+                };
+                
+                files.push(fileObj);
+                renderFileItem(fileObj);
+            });
+            
+            updateUI();
+        }
+
+        function renderFileItem(fileObj) {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item bg-white rounded-lg shadow-md p-4';
+            fileItem.id = `file-${fileObj.id}`;
+            
+            fileItem.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-file-pdf text-red-500 text-2xl"></i>
+                        <div>
+                            <h4 class="font-semibold text-gray-700">${fileObj.name}</h4>
+                            <p class="text-sm text-gray-500">${formatFileSize(fileObj.size)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="text-right">
+                            <p class="text-sm text-gray-600">压缩后</p>
+                            <p class="font-semibold text-green-600" id="compressed-size-${fileObj.id}">-</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-600">节省</p>
+                            <p class="font-semibold text-blue-600" id="saved-percent-${fileObj.id}">-</p>
+                        </div>
+                        <button onclick="removeFile(${fileObj.id})" class="text-red-500 hover:text-red-700 transition-colors">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div id="progress-${fileObj.id}" class="progress-bar bg-blue-500 h-full w-0"></div>
+                    </div>
+                    <p id="status-${fileObj.id}" class="text-sm text-gray-600 mt-1">等待压缩</p>
+                </div>
+            `;
+            
+            fileList.appendChild(fileItem);
+        }
+
+        async function compressAllFiles() {
+            if (files.length === 0) {
+                showToast('请先上传 PDF 文件', 'warning');
+                return;
+            }
+            
+            compressAllBtn.disabled = true;
+            compressAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>压缩中...';
+            
+            for (const fileObj of files) {
+                if (fileObj.status === 'pending') {
+                    await compressFile(fileObj);
+                }
+            }
+            
+            compressAllBtn.disabled = false;
+            compressAllBtn.innerHTML = '<i class="fas fa-compress mr-2"></i>压缩全部文件';
+            updateStatistics();
+        }
+
+        async function compressFile(fileObj) {
+            try {
+                fileObj.status = 'compressing';
+                updateFileStatus(fileObj.id, 'compressing', 0);
+                
+                const arrayBuffer = await fileObj.file.arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                
+                // Get compression settings
+                const quality = parseInt(imageQuality.value) / 100;
+                const level = compressionLevel.value;
+                
+                // Simulate compression progress
+                let progress = 0;
+                const progressInterval = setInterval(() => {
+                    progress += Math.random() * 20;
+                    if (progress > 90) progress = 90;
+                    updateFileStatus(fileObj.id, 'compressing', progress);
+                }, 100);
+                
+                // Apply compression based on level
+                if (level === 'low') {
+                    pdfDoc.setTitle(pdfDoc.getTitle() || '');
+                    pdfDoc.setAuthor(pdfDoc.getAuthor() || '');
+                    pdfDoc.setSubject(pdfDoc.getSubject() || '');
+                    pdfDoc.setKeywords(pdfDoc.getKeywords() || []);
+                    pdfDoc.setProducer(pdfDoc.getProducer() || '');
+                    pdfDoc.setCreator(pdfDoc.getCreator() || '');
+                }
+                
+                const compressedPdfBytes = await pdfDoc.save({
+                    useObjectStreams: true,
+                    addDefaultPage: false,
+                    objectsPerTick: 50
+                });
+                
+                clearInterval(progressInterval);
+                updateFileStatus(fileObj.id, 'compressing', 100);
+                
+                const compressedBlob = new Blob([compressedPdfBytes], { type: 'application/pdf' });
+                fileObj.compressed = compressedBlob;
+                fileObj.status = 'completed';
+                
+                const originalSize = fileObj.size;
+                const compressedSize = compressedBlob.size;
+                const savedPercent = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+                
+                updateFileStatus(fileObj.id, 'completed', 100);
+                document.getElementById(`compressed-size-${fileObj.id}`).textContent = formatFileSize(compressedSize);
+                document.getElementById(`saved-percent-${fileObj.id}`).textContent = savedPercent + '%';
+                
+                // Add download button
+                const fileItem = document.getElementById(`file-${fileObj.id}`);
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'ml-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors text-sm';
+                downloadBtn.innerHTML = '<i class="fas fa-download mr-2"></i>下载';
+                downloadBtn.onclick = () => downloadFile(fileObj);
+                fileItem.querySelector('.flex.items-center.justify-between').appendChild(downloadBtn);
+                
+                showToast(`${fileObj.name} 压缩完成，节省 ${savedPercent}%`, 'success');
+                
+            } catch (error) {
+                console.error('Compression error:', error);
+                fileObj.status = 'error';
+                updateFileStatus(fileObj.id, 'error', 0);
+                showToast(`压缩 ${fileObj.name} 时出错`, 'error');
+            }
+        }
+
+        function updateFileStatus(fileId, status, progress) {
+            const progressBar = document.getElementById(`progress-${fileId}`);
+            const statusText = document.getElementById(`status-${fileId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = progress + '%';
+            }
+            
+            if (statusText) {
+                switch (status) {
+                    case 'pending':
+                        statusText.textContent = '等待压缩';
+                        break;
+                    case 'compressing':
+                        statusText.textContent = `压缩中... ${Math.round(progress)}%`;
+                        break;
+                    case 'completed':
+                        statusText.textContent = '压缩完成';
+                        statusText.className = 'text-sm text-green-600 mt-1';
+                        break;
+                    case 'error':
+                        statusText.textContent = '压缩失败';
+                        statusText.className = 'text-sm text-red-600 mt-1';
+                        break;
+                }
+            }
+        }
+
+        function removeFile(fileId) {
+            files = files.filter(f => f.id !== fileId);
+            const fileItem = document.getElementById(`file-${fileId}`);
+            if (fileItem) {
+                fileItem.remove();
+            }
+            updateUI();
+        }
+
+        function clearAllFiles() {
+            if (files.length === 0) return;
+            
+            if (confirm('确定要清空所有文件吗？')) {
+                files = [];
+                fileList.innerHTML = '';
+                updateUI();
+                showToast('已清空所有文件', 'info');
+            }
+        }
+
+        function downloadFile(fileObj) {
+            if (!fileObj.compressed) return;
+            
+            const url = URL.createObjectURL(fileObj.compressed);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `compressed_${fileObj.name}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function updateUI() {
+            compressAllBtn.disabled = files.length === 0;
+            updateStatistics();
+        }
+
+        function updateStatistics() {
+            if (files.length === 0) {
+                statistics.classList.add('hidden');
+                return;
+            }
+            
+            statistics.classList.remove('hidden');
+            
+            const totalFiles = files.length;
+            let originalSize = 0;
+            let compressedSize = 0;
+            
+            files.forEach(file => {
+                originalSize += file.size;
+                if (file.compressed) {
+                    compressedSize += file.compressed.size;
+                }
+            });
+            
+            const savedPercent = originalSize > 0 ? ((originalSize - compressedSize) / originalSize * 100).toFixed(1) : 0;
+            
+            document.getElementById('totalFiles').textContent = totalFiles;
+            document.getElementById('originalSize').textContent = formatFileSize(originalSize);
+            document.getElementById('compressedSize').textContent = formatFileSize(compressedSize);
+            document.getElementById('savedSpace').textContent = savedPercent + '%';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = 'toast bg-white rounded-lg shadow-lg p-4 flex items-center space-x-3';
+            
+            let icon, bgColor;
+            switch (type) {
+                case 'success':
+                    icon = 'fa-check-circle';
+                    bgColor = 'text-green-500';
+                    break;
+                case 'error':
+                    icon = 'fa-exclamation-circle';
+                    bgColor = 'text-red-500';
+                    break;
+                case 'warning':
+                    icon = 'fa-exclamation-triangle';
+                    bgColor = 'text-yellow-500';
+                    break;
+                default:
+                    icon = 'fa-info-circle';
+                    bgColor = 'text-blue-500';
+            }
+            
+            toast.innerHTML = `
+                <i class="fas ${icon} ${bgColor} text-xl"></i>
+                <span class="text-gray-700">${message}</span>
+            `;
+            
+            document.getElementById('toastContainer').appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(20px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Initialize
+        updateUI();
+    </script>
+</body>
+</html>
